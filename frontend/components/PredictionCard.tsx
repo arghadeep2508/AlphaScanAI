@@ -1,0 +1,55 @@
+"use client";
+
+export default function PredictionCard({ prediction }: any) {
+
+  if (!prediction) return null;
+
+  const isUp = prediction.prediction === "UP";
+
+  const signalText = isUp ? "BUY" : "SELL";
+
+  return (
+
+    <div className="bg-gradient-to-br from-slate-900 to-slate-800 border border-slate-700 rounded-xl p-6 shadow-lg h-[160px] flex flex-col justify-between">
+
+      {/* Header */}
+      <div className="flex items-center gap-2 text-slate-400 text-sm">
+
+        <img
+          src="/logo.png"
+          alt="AlphaScanAI"
+          className="w-5 h-5"
+        />
+
+        <span>AlphaScanAI Prediction</span>
+
+      </div>
+
+      {/* Prediction Signal */}
+
+      <div
+        className={`text-3xl font-bold ${
+          isUp ? "text-green-400" : "text-red-400"
+        }`}
+      >
+        {signalText}
+      </div>
+
+      {/* Confidence */}
+
+      <div>
+
+        <div className="text-slate-400 text-sm">
+          Confidence
+        </div>
+
+        <div className="text-xl font-semibold">
+          {(prediction.confidence * 100).toFixed(2)}%
+        </div>
+
+      </div>
+
+    </div>
+
+  );
+}
