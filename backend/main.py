@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import joblib
+import os
 
 from backend.chart import router as chart_router
 
@@ -30,8 +31,16 @@ app.add_middleware(
 # LOAD ML MODEL
 # -----------------------------
 
-model = joblib.load("model/stock_model.pkl")
-features = joblib.load("model/features.pkl")
+# Get the directory where main.py is located
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Build correct file paths
+MODEL_PATH = os.path.join(BASE_DIR, "model", "stock_model.pkl")
+FEATURE_PATH = os.path.join(BASE_DIR, "model", "features.pkl")
+
+# Load model and features
+model = joblib.load(MODEL_PATH)
+features = joblib.load(FEATURE_PATH)
 
 features = [f.strip() for f in features]
 
@@ -149,7 +158,4 @@ def predict(symbol: str):
 
         return {
             "error": str(e)
-
         }
-
-
