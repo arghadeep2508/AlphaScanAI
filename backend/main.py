@@ -6,7 +6,7 @@ import numpy as np
 import yfinance as yf
 import joblib
 
-from chart import router as chart_router
+from .chart import router as chart_router
 
 
 # -----------------------------
@@ -149,4 +149,5 @@ def predict(symbol: str):
 
         return {
             "error": str(e)
+
         }
