@@ -9,45 +9,60 @@ router = APIRouter()
 def get_chart(symbol: str):
     """
     Fetch 6 months of daily OHLCV data for a stock symbol
-    and return it in a JSON format suitable for charting.
+    and return it in JSON format for frontend charting.
     """
 
     try:
-        # Download stock data
-        df = yf.download(symbol, period="6mo", interval="1d")
+        # Use Ticker API (more reliable on cloud servers)
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(period="6mo", interval="1d")
 
-        # Check if data exists
-        if df.empty:
+        # Validate data
+        if df is None or df.empty:
             raise HTTPException(
                 status_code=404,
                 detail=f"No data found for symbol: {symbol}"
             )
 
-        # Fix multi-index columns (sometimes happens with yfinance)
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-
-        # Reset index so Date becomes a column
+        # Reset index so Date becomes column
         df = df.reset_index()
 
-        data = []
+        # Handle Date/DATETIME naming differences
+        date_column = "Date" if "Date" in df.columns else "Datetime"
 
-        for _, row in df.iterrows():
+        # Ensure required columns exist
+        required_cols = ["Open", "High", "Low", "Close", "Volume"]
+        for col in required_cols:
+            if col not in df.columns:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Missing column {col} in stock data"
+                )
 
-            # Skip rows with missing values
-            if pd.isna(row["Open"]) or pd.isna(row["Close"]):
-                continue
-
-            data.append({
-                "time": row["Date"].strftime("%Y-%m-%d"),
+        # Convert dataframe rows into chart format
+        data = [
+            {
+                "time": row[date_column].strftime("%Y-%m-%d"),
                 "open": float(row["Open"]),
                 "high": float(row["High"]),
                 "low": float(row["Low"]),
                 "close": float(row["Close"]),
-                "volume": float(row["Volume"])
-            })
+                "volume": float(row["Volume"]),
+            }
+            for _, row in df.iterrows()
+            if pd.notna(row["Open"]) and pd.notna(row["Close"])
+        ]
+
+        if not data:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No valid chart data for symbol: {symbol}"
+            )
 
         return data
+
+    except HTTPException:
+        raise
 
     except Exception as e:
         raise HTTPException(
