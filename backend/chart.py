@@ -36,7 +36,10 @@ class ChartData(BaseModel):
 def fetch_stock_data(symbol: str) -> pd.DataFrame:
     """
     Fetch stock data from Yahoo Finance.
-    Uses download first, then falls back to Ticker.history().
+
+    Strategy:
+    1️⃣ Try yf.download()
+    2️⃣ If empty → fallback to Ticker.history()
     """
 
     try:
@@ -50,23 +53,38 @@ def fetch_stock_data(symbol: str) -> pd.DataFrame:
         )
 
         if df is not None and not df.empty:
+            logger.info(f"yf.download worked for {symbol}")
             return df
 
-        logger.warning(f"yf.download returned empty for {symbol}, using fallback")
+        logger.warning(f"yf.download returned empty for {symbol}, trying fallback")
 
     except Exception as e:
         logger.warning(f"yf.download failed for {symbol}: {e}")
 
-    # Fallback method (more reliable on cloud servers)
+    # -------------------------------
+    # Fallback Method
+    # -------------------------------
+
     try:
         ticker = yf.Ticker(symbol)
-        df = ticker.history(period="6mo", interval="1d")
 
-        return df
+        df = ticker.history(
+            period="6mo",
+            interval="1d",
+            auto_adjust=False,
+            actions=False
+        )
+
+        if df is not None and not df.empty:
+            logger.info(f"Ticker.history fallback worked for {symbol}")
+            return df
+
+        logger.warning(f"Ticker.history returned empty for {symbol}")
 
     except Exception as e:
         logger.error(f"Fallback history fetch failed for {symbol}: {e}")
-        return pd.DataFrame()
+
+    return pd.DataFrame()
 
 
 # -------------------------------
@@ -77,7 +95,7 @@ def fetch_stock_data(symbol: str) -> pd.DataFrame:
 async def get_chart(symbol: str):
     """
     Returns historical OHLCV chart data for a stock.
-    Used by the frontend to render stock charts.
+    Used by frontend charts.
     """
 
     try:
@@ -89,7 +107,7 @@ async def get_chart(symbol: str):
                 detail="Invalid stock symbol"
             )
 
-        # Run blocking function in thread
+        # Run blocking IO in background thread
         df = await asyncio.to_thread(fetch_stock_data, symbol)
 
         if df is None or df.empty:
@@ -102,6 +120,7 @@ async def get_chart(symbol: str):
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
+        # Reset index
         df = df.reset_index()
 
         if "Date" not in df.columns:
@@ -143,7 +162,7 @@ async def get_chart(symbol: str):
                 detail=f"No usable chart data for symbol: {symbol}"
             )
 
-        logger.info(f"Chart data fetched for {symbol}")
+        logger.info(f"Chart data returned for {symbol}")
 
         return data
 
