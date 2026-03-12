@@ -35,19 +35,38 @@ class ChartData(BaseModel):
 
 def fetch_stock_data(symbol: str) -> pd.DataFrame:
     """
-    Blocking function to download stock data from Yahoo Finance
+    Fetch stock data from Yahoo Finance.
+    Uses download first, then falls back to Ticker.history().
     """
 
-    df = yf.download(
-        tickers=symbol,
-        period="6mo",
-        interval="1d",
-        auto_adjust=False,
-        progress=False,
-        threads=False
-    )
+    try:
+        df = yf.download(
+            tickers=symbol,
+            period="6mo",
+            interval="1d",
+            auto_adjust=False,
+            progress=False,
+            threads=False
+        )
 
-    return df
+        if df is not None and not df.empty:
+            return df
+
+        logger.warning(f"yf.download returned empty for {symbol}, using fallback")
+
+    except Exception as e:
+        logger.warning(f"yf.download failed for {symbol}: {e}")
+
+    # Fallback method (more reliable on cloud servers)
+    try:
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(period="6mo", interval="1d")
+
+        return df
+
+    except Exception as e:
+        logger.error(f"Fallback history fetch failed for {symbol}: {e}")
+        return pd.DataFrame()
 
 
 # -------------------------------
@@ -79,11 +98,10 @@ async def get_chart(symbol: str):
                 detail=f"No data found for symbol: {symbol}"
             )
 
-        # Handle multi-index columns (sometimes Yahoo returns this)
+        # Handle multi-index columns
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
-        # Reset index to access Date
         df = df.reset_index()
 
         if "Date" not in df.columns:
