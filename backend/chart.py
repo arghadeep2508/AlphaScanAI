@@ -13,6 +13,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("chart_api")
 
 
+# --------------------------------
+# Response Model
+# --------------------------------
 class ChartData(BaseModel):
     time: str
     open: float
@@ -22,14 +25,13 @@ class ChartData(BaseModel):
     volume: float
 
 
-# -------------------------------
+# --------------------------------
 # Yahoo Finance Direct API
-# -------------------------------
-
+# --------------------------------
 def fetch_yahoo_api(symbol: str) -> pd.DataFrame:
     """
-    Fetch stock data using Yahoo Finance Chart API
-    Much more reliable than yfinance on cloud servers
+    Fetch stock data using Yahoo Chart API
+    More reliable than yfinance on cloud servers
     """
 
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
@@ -44,41 +46,59 @@ def fetch_yahoo_api(symbol: str) -> pd.DataFrame:
     }
 
     try:
-        r = requests.get(url, params=params, headers=headers, timeout=10)
 
-        if r.status_code != 200:
+        response = requests.get(
+            url,
+            params=params,
+            headers=headers,
+            timeout=10
+        )
+
+        if response.status_code != 200:
+            logger.warning(f"Yahoo API returned status {response.status_code}")
             return pd.DataFrame()
 
-        data = r.json()
+        data = response.json()
+
+        # Safety checks
+        if "chart" not in data:
+            return pd.DataFrame()
+
+        if data["chart"]["result"] is None:
+            return pd.DataFrame()
 
         result = data["chart"]["result"][0]
 
-        timestamps = result["timestamp"]
+        timestamps = result.get("timestamp", None)
+
+        if timestamps is None:
+            return pd.DataFrame()
+
         indicators = result["indicators"]["quote"][0]
 
         df = pd.DataFrame({
             "Date": pd.to_datetime(timestamps, unit="s"),
-            "Open": indicators["open"],
-            "High": indicators["high"],
-            "Low": indicators["low"],
-            "Close": indicators["close"],
-            "Volume": indicators["volume"]
+            "Open": indicators.get("open"),
+            "High": indicators.get("high"),
+            "Low": indicators.get("low"),
+            "Close": indicators.get("close"),
+            "Volume": indicators.get("volume")
         })
 
         return df
 
     except Exception as e:
-        logger.warning(f"Yahoo API failed: {e}")
+        logger.warning(f"Yahoo API failed for {symbol}: {e}")
         return pd.DataFrame()
 
 
-# -------------------------------
-# Fallback yfinance
-# -------------------------------
-
+# --------------------------------
+# Fallback using yfinance
+# --------------------------------
 def fetch_yfinance(symbol: str) -> pd.DataFrame:
 
     try:
+
         ticker = yf.Ticker(symbol)
 
         df = ticker.history(
@@ -93,18 +113,17 @@ def fetch_yfinance(symbol: str) -> pd.DataFrame:
             return df
 
     except Exception as e:
-        logger.warning(f"yfinance fallback failed: {e}")
+        logger.warning(f"yfinance fallback failed for {symbol}: {e}")
 
     return pd.DataFrame()
 
 
-# -------------------------------
-# Main fetch function
-# -------------------------------
-
+# --------------------------------
+# Main Fetch Function
+# --------------------------------
 def fetch_stock_data(symbol: str) -> pd.DataFrame:
 
-    # First try Yahoo API
+    # Try Yahoo API first
     df = fetch_yahoo_api(symbol)
 
     if not df.empty:
@@ -116,19 +135,23 @@ def fetch_stock_data(symbol: str) -> pd.DataFrame:
     return fetch_yfinance(symbol)
 
 
-# -------------------------------
+# --------------------------------
 # API Endpoint
-# -------------------------------
-
+# --------------------------------
 @router.get("/chart/{symbol}", response_model=List[ChartData])
 async def get_chart(symbol: str):
 
     try:
+
         symbol = symbol.strip().upper()
 
         if not symbol:
-            raise HTTPException(status_code=400, detail="Invalid stock symbol")
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid stock symbol"
+            )
 
+        # Run blocking code in thread
         df = await asyncio.to_thread(fetch_stock_data, symbol)
 
         if df is None or df.empty:
@@ -178,6 +201,7 @@ async def get_chart(symbol: str):
         raise
 
     except Exception as e:
+
         logger.error(f"Chart API error for {symbol}: {str(e)}")
 
         raise HTTPException(
