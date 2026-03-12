@@ -9,23 +9,29 @@ def get_price(symbol: str):
 
     symbol = symbol.upper().strip()
 
-    df = yf.download(
-        symbol,
-        period="6mo",
-        interval="1d",
-        progress=False
-    )
+    try:
+        df = yf.download(
+            symbol,
+            period="6mo",
+            interval="1d",
+            progress=False
+        )
 
-    # SAFETY CHECK
-    if df is None or df.empty:
+        if df is None or df.empty:
+            return {
+                "error": "yfinance returned empty dataframe",
+                "symbol": symbol
+            }
+
+        latest_price = float(df["Close"].iloc[-1])
+
         return {
-            "error": "market data fetch failed",
-            "symbol": symbol
+            "symbol": symbol,
+            "price": latest_price
         }
 
-    latest_price = float(df["Close"].iloc[-1])
-
-    return {
-        "symbol": symbol,
-        "price": latest_price
-    }
+    except Exception as e:
+        return {
+            "error": str(e),
+            "symbol": symbol
+        }
