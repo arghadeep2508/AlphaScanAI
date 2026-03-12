@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 import yfinance as yf
+import pandas as pd
 
 router = APIRouter()
 
@@ -10,12 +11,19 @@ def get_price(symbol: str):
     symbol = symbol.upper().strip()
 
     try:
+
         df = yf.download(
-            symbol,
+            tickers=symbol,
             period="6mo",
             interval="1d",
-            progress=False
+            auto_adjust=False,
+            progress=False,
+            threads=False
         )
+
+        # handle multi-index columns (sometimes yahoo returns this)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
 
         if df is None or df.empty:
             return {
@@ -31,6 +39,7 @@ def get_price(symbol: str):
         }
 
     except Exception as e:
+
         return {
             "error": str(e),
             "symbol": symbol
