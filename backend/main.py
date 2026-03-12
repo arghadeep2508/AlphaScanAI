@@ -3,11 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import pandas as pd
 import numpy as np
-import yfinance as yf
 import joblib
 import os
 
 from backend.chart import router as chart_router
+from backend.chart import fetch_stock_data
 
 
 # -----------------------------
@@ -117,22 +117,24 @@ def predict(symbol: str):
 
         symbol = symbol.upper()
 
-        df = yf.download(symbol, period="6mo", interval="1d")
+        # Use same reliable data source as chart endpoint
+        df = fetch_stock_data(symbol)
 
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-
-        if df.empty:
+        if df is None or df.empty:
             return {"error": "No market data available"}
+
+        # Ensure Date is index for feature calculations
+        if "Date" in df.columns:
+            df = df.set_index("Date")
 
         df = compute_features(df)
 
         latest = df.iloc[-1].copy()
-
         latest["symbol_id"] = 1
 
         X = pd.DataFrame([latest])
 
+        # Ensure all required features exist
         for col in features:
             if col not in X.columns:
                 X[col] = 0
