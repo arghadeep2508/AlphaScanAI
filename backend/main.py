@@ -17,8 +17,11 @@ from backend.price import router as price_router
 
 app = FastAPI(title="AlphaScanAI")
 
+# Register routers
 app.include_router(chart_router)
+app.include_router(price_router)
 
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -32,14 +35,11 @@ app.add_middleware(
 # LOAD ML MODEL
 # -----------------------------
 
-# Get the directory where main.py is located
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Build correct file paths
 MODEL_PATH = os.path.join(BASE_DIR, "model", "stock_model.pkl")
 FEATURE_PATH = os.path.join(BASE_DIR, "model", "features.pkl")
 
-# Load model and features
 model = joblib.load(MODEL_PATH)
 features = joblib.load(FEATURE_PATH)
 
@@ -67,7 +67,6 @@ def compute_features(df: pd.DataFrame):
 
     df["macd"] = df["ema12"] - df["ema26"]
 
-    # RSI
     delta = df["Close"].diff()
     gain = delta.clip(lower=0).rolling(14).mean()
     loss = (-delta.clip(upper=0)).rolling(14).mean()
@@ -75,7 +74,6 @@ def compute_features(df: pd.DataFrame):
     rs = gain / (loss.replace(0, np.nan))
     df["rsi"] = 100 - (100 / (1 + rs))
 
-    # Bollinger Bands
     std = df["Close"].rolling(20).std()
     df["bb_upper"] = df["sma20"] + 2 * std
     df["bb_lower"] = df["sma20"] - 2 * std
@@ -119,9 +117,10 @@ def predict(symbol: str):
 
     try:
 
+        symbol = symbol.upper()
+
         df = yf.download(symbol, period="6mo", interval="1d")
 
-        # Fix multi-index issue
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
@@ -136,7 +135,6 @@ def predict(symbol: str):
 
         X = pd.DataFrame([latest])
 
-        # ensure all required features exist
         for col in features:
             if col not in X.columns:
                 X[col] = 0
@@ -149,7 +147,7 @@ def predict(symbol: str):
         price = float(df["Close"].iloc[-1])
 
         return {
-            "symbol": symbol.upper(),
+            "symbol": symbol,
             "price": price,
             "prediction": "UP" if pred == 1 else "DOWN",
             "confidence": float(proba)
@@ -160,4 +158,3 @@ def predict(symbol: str):
         return {
             "error": str(e)
         }
-
