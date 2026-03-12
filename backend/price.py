@@ -3,19 +3,26 @@ import yfinance as yf
 
 router = APIRouter()
 
+
 @router.get("/price/{symbol}")
 def get_price(symbol: str):
 
     symbol = symbol.upper()
 
     try:
-        ticker = yf.Ticker(symbol)
-        data = ticker.history(period="1d")
+        # Use download instead of Ticker.history
+        df = yf.download(
+            symbol,
+            period="5d",
+            interval="1d",
+            progress=False,
+            threads=False
+        )
 
-        if data.empty:
+        if df is None or df.empty:
             return {"error": "No market data available"}
 
-        price = float(data["Close"].iloc[-1])
+        price = float(df["Close"].iloc[-1])
 
         return {
             "symbol": symbol,
