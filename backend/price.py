@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 import yfinance as yf
+import pandas as pd
 
 router = APIRouter()
 
@@ -9,10 +10,11 @@ def get_price(symbol: str):
     symbol = symbol.upper().strip()
 
     try:
-        ticker = yf.Ticker(symbol)
+        # use same download logic as chart endpoint
+        df = yf.download(symbol, period="6mo", interval="1d", progress=False)
 
-        # request more data (cloud servers often fail with 1d)
-        df = ticker.history(period="5d")
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
 
         if df.empty:
             return {
@@ -20,11 +22,11 @@ def get_price(symbol: str):
                 "symbol": symbol
             }
 
-        price = float(df["Close"].iloc[-1])
+        latest_price = float(df["Close"].iloc[-1])
 
         return {
             "symbol": symbol,
-            "price": price
+            "price": latest_price
         }
 
     except Exception as e:
