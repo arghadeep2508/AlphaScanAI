@@ -6,70 +6,31 @@ import logging
 
 router = APIRouter()
 
-# -------------------------------
-# Logging Setup
-# -------------------------------
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("price_api")
 
 
-# -------------------------------
-# Helper Function
-# -------------------------------
-
-def fetch_price(symbol: str) -> float | None:
-    """
-    Fetch latest stock price from Yahoo Finance.
-    Uses download first, then fallback to Ticker.history().
-    """
+def fetch_price(symbol: str):
 
     try:
-
+        # Use longer period to ensure data availability
         df = yf.download(
             tickers=symbol,
-            period="5d",
+            period="1mo",
             interval="1d",
-            auto_adjust=False,
             progress=False,
             threads=False
         )
 
-        if df is not None and not df.empty:
-            return float(df["Close"].iloc[-1])
+        if df is None or df.empty:
+            return None
 
-        logger.warning(f"yf.download returned empty for {symbol}")
-
-    except Exception as e:
-        logger.warning(f"yf.download failed for {symbol}: {e}")
-
-    # -------------------------------
-    # Fallback method
-    # -------------------------------
-
-    try:
-
-        ticker = yf.Ticker(symbol)
-
-        df = ticker.history(
-            period="5d",
-            interval="1d",
-            auto_adjust=False,
-            actions=False
-        )
-
-        if df is not None and not df.empty:
-            return float(df["Close"].iloc[-1])
+        return float(df["Close"].iloc[-1])
 
     except Exception as e:
-        logger.error(f"Fallback history failed for {symbol}: {e}")
+        logger.error(f"Price fetch failed: {e}")
+        return None
 
-    return None
-
-
-# -------------------------------
-# API Endpoint
-# -------------------------------
 
 @router.get("/price/{symbol}")
 async def get_price(symbol: str):
@@ -77,36 +38,17 @@ async def get_price(symbol: str):
     symbol = symbol.strip().upper()
 
     if not symbol:
+        raise HTTPException(status_code=400, detail="Invalid stock symbol")
+
+    price = await asyncio.to_thread(fetch_price, symbol)
+
+    if price is None:
         raise HTTPException(
-            status_code=400,
-            detail="Invalid stock symbol"
+            status_code=404,
+            detail=f"No market data available for {symbol}"
         )
 
-    try:
-
-        price = await asyncio.to_thread(fetch_price, symbol)
-
-        if price is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No market data available for {symbol}"
-            )
-
-        logger.info(f"Price fetched for {symbol}")
-
-        return {
-            "symbol": symbol,
-            "price": price
-        }
-
-    except HTTPException:
-        raise
-
-    except Exception as e:
-
-        logger.error(f"Price API error for {symbol}: {str(e)}")
-
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to fetch price: {str(e)}"
-        )
+    return {
+        "symbol": symbol,
+        "price": price
+    }
