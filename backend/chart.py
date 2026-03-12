@@ -1,24 +1,17 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List
-import yfinance as yf
 import pandas as pd
 import asyncio
 import logging
+import requests
+import yfinance as yf
 
 router = APIRouter()
-
-# -------------------------------
-# Logging Setup
-# -------------------------------
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("chart_api")
 
-
-# -------------------------------
-# Response Schema
-# -------------------------------
 
 class ChartData(BaseModel):
     time: str
@@ -30,40 +23,60 @@ class ChartData(BaseModel):
 
 
 # -------------------------------
-# Helper Function
+# Yahoo Finance Direct API
 # -------------------------------
 
-def fetch_stock_data(symbol: str) -> pd.DataFrame:
+def fetch_yahoo_api(symbol: str) -> pd.DataFrame:
     """
-    Fetch stock data from Yahoo Finance.
+    Fetch stock data using Yahoo Finance Chart API
+    Much more reliable than yfinance on cloud servers
+    """
 
-    Strategy:
-    1️⃣ Try yf.download()
-    2️⃣ If empty → fallback to Ticker.history()
-    """
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+
+    params = {
+        "range": "6mo",
+        "interval": "1d"
+    }
+
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
 
     try:
-        df = yf.download(
-            tickers=symbol,
-            period="6mo",
-            interval="1d",
-            auto_adjust=False,
-            progress=False,
-            threads=False
-        )
+        r = requests.get(url, params=params, headers=headers, timeout=10)
 
-        if df is not None and not df.empty:
-            logger.info(f"yf.download worked for {symbol}")
-            return df
+        if r.status_code != 200:
+            return pd.DataFrame()
 
-        logger.warning(f"yf.download returned empty for {symbol}, trying fallback")
+        data = r.json()
+
+        result = data["chart"]["result"][0]
+
+        timestamps = result["timestamp"]
+        indicators = result["indicators"]["quote"][0]
+
+        df = pd.DataFrame({
+            "Date": pd.to_datetime(timestamps, unit="s"),
+            "Open": indicators["open"],
+            "High": indicators["high"],
+            "Low": indicators["low"],
+            "Close": indicators["close"],
+            "Volume": indicators["volume"]
+        })
+
+        return df
 
     except Exception as e:
-        logger.warning(f"yf.download failed for {symbol}: {e}")
+        logger.warning(f"Yahoo API failed: {e}")
+        return pd.DataFrame()
 
-    # -------------------------------
-    # Fallback Method
-    # -------------------------------
+
+# -------------------------------
+# Fallback yfinance
+# -------------------------------
+
+def fetch_yfinance(symbol: str) -> pd.DataFrame:
 
     try:
         ticker = yf.Ticker(symbol)
@@ -76,15 +89,31 @@ def fetch_stock_data(symbol: str) -> pd.DataFrame:
         )
 
         if df is not None and not df.empty:
-            logger.info(f"Ticker.history fallback worked for {symbol}")
+            df = df.reset_index()
             return df
 
-        logger.warning(f"Ticker.history returned empty for {symbol}")
-
     except Exception as e:
-        logger.error(f"Fallback history fetch failed for {symbol}: {e}")
+        logger.warning(f"yfinance fallback failed: {e}")
 
     return pd.DataFrame()
+
+
+# -------------------------------
+# Main fetch function
+# -------------------------------
+
+def fetch_stock_data(symbol: str) -> pd.DataFrame:
+
+    # First try Yahoo API
+    df = fetch_yahoo_api(symbol)
+
+    if not df.empty:
+        return df
+
+    logger.info(f"Yahoo API empty for {symbol}, using yfinance fallback")
+
+    # Fallback
+    return fetch_yfinance(symbol)
 
 
 # -------------------------------
@@ -93,21 +122,13 @@ def fetch_stock_data(symbol: str) -> pd.DataFrame:
 
 @router.get("/chart/{symbol}", response_model=List[ChartData])
 async def get_chart(symbol: str):
-    """
-    Returns historical OHLCV chart data for a stock.
-    Used by frontend charts.
-    """
 
     try:
         symbol = symbol.strip().upper()
 
         if not symbol:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid stock symbol"
-            )
+            raise HTTPException(status_code=400, detail="Invalid stock symbol")
 
-        # Run blocking IO in background thread
         df = await asyncio.to_thread(fetch_stock_data, symbol)
 
         if df is None or df.empty:
@@ -116,26 +137,13 @@ async def get_chart(symbol: str):
                 detail=f"No data found for symbol: {symbol}"
             )
 
-        # Handle multi-index columns
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-
-        # Reset index
-        df = df.reset_index()
-
-        if "Date" not in df.columns:
-            raise HTTPException(
-                status_code=500,
-                detail="Date column missing in Yahoo Finance response"
-            )
-
         required_cols = ["Open", "High", "Low", "Close", "Volume"]
 
         for col in required_cols:
             if col not in df.columns:
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Missing column '{col}' in Yahoo Finance data"
+                    detail=f"Missing column '{col}'"
                 )
 
         data: List[ChartData] = []
@@ -162,7 +170,7 @@ async def get_chart(symbol: str):
                 detail=f"No usable chart data for symbol: {symbol}"
             )
 
-        logger.info(f"Chart data returned for {symbol}")
+        logger.info(f"Chart data fetched for {symbol}")
 
         return data
 
