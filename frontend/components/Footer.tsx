@@ -10,16 +10,16 @@ export default function Footer() {
 
       <div className="max-w-4xl mx-auto px-6">
 
-        <p className="mb-4 leading-relaxed">
-
-          AlphaScanAI provides algorithmic market analysis and AI-generated insights
+        {/* Disclaimer */}
+        <p className="mb-4 leading-relaxed text-red-400 font-semibold text-center">
+          ⚠ AlphaScanAI provides algorithmic market analysis and AI-generated insights
           for educational and informational purposes only. The platform does not
           provide financial, investment, or trading advice. Users should conduct
           their own research or consult a licensed financial advisor before making
           any investment decisions.
-
         </p>
 
+        {/* Footer Links */}
         <div className="flex justify-center gap-6 text-yellow-400 font-medium">
 
           <Link href="/how-to-use">How to Use</Link>
@@ -32,6 +32,7 @@ export default function Footer() {
 
         </div>
 
+        {/* Copyright */}
         <p className="mt-4 text-slate-500">
           © 2026 AlphaScanAI. All rights reserved.
         </p>
@@ -41,4 +42,5 @@ export default function Footer() {
     </footer>
 
   );
+
 }
