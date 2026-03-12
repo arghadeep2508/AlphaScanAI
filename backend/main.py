@@ -8,7 +8,6 @@ import joblib
 import os
 
 from backend.chart import router as chart_router
-from backend.price import router as price_router
 
 
 # -----------------------------
@@ -19,7 +18,6 @@ app = FastAPI(title="AlphaScanAI")
 
 # Register routers
 app.include_router(chart_router)
-app.include_router(price_router)
 
 # Enable CORS
 app.add_middleware(
