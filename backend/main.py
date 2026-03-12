@@ -8,6 +8,7 @@ import joblib
 import os
 
 from backend.chart import router as chart_router
+from backend.price import router as price_router
 
 
 # -----------------------------
@@ -159,3 +160,4 @@ def predict(symbol: str):
         return {
             "error": str(e)
         }
+
