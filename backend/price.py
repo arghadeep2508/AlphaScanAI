@@ -11,15 +11,16 @@ def get_price(symbol: str):
     try:
         ticker = yf.Ticker(symbol)
 
-        data = ticker.history(period="1d")
+        # request more data (cloud servers often fail with 1d)
+        df = ticker.history(period="5d")
 
-        if data is None or data.empty:
+        if df.empty:
             return {
-                "error": "no price data returned",
+                "error": "no market data available",
                 "symbol": symbol
             }
 
-        price = float(data["Close"].iloc[-1])
+        price = float(df["Close"].iloc[-1])
 
         return {
             "symbol": symbol,
