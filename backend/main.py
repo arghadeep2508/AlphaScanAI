@@ -10,6 +10,7 @@ from backend.chart import router as chart_router
 from backend.chart import fetch_stock_data
 
 
+
 # -----------------------------
 # FASTAPI APP
 # -----------------------------
