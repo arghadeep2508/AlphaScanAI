@@ -12,10 +12,20 @@ import Timeframe from "../components/Timeframe";
 
 const API_URL = "https://alphascanai-backend.onrender.com";
 
+type PredictionType = {
+  price: number;
+  prediction: "UP" | "DOWN";
+  confidence: number;
+  probabilities: {
+    bullish: number;
+    bearish: number;
+  };
+};
+
 export default function Page() {
 
   const [symbol, setSymbol] = useState("AAPL");
-  const [prediction, setPrediction] = useState<any>(null);
+  const [prediction, setPrediction] = useState<PredictionType | null>(null);
   const [price, setPrice] = useState<number | null>(null);
 
   const handleAnalyze = async (ticker: string) => {
@@ -25,8 +35,8 @@ export default function Page() {
       const res = await fetch(`${API_URL}/predict/${ticker}`);
       const data = await res.json();
 
-      if (data.error) {
-        console.error(data.error);
+      if (!res.ok || data.error) {
+        console.error("API error:", data.error);
         return;
       }
 
@@ -35,9 +45,19 @@ export default function Page() {
       setSymbol(ticker);
 
     } catch (err) {
-      console.error("API error", err);
+      console.error("API request failed:", err);
     }
   };
+
+  const buyPercent =
+    prediction?.probabilities
+      ? Math.round(prediction.probabilities.bullish * 100)
+      : 0;
+
+  const sellPercent =
+    prediction?.probabilities
+      ? Math.round(prediction.probabilities.bearish * 100)
+      : 0;
 
   return (
 
@@ -53,22 +73,10 @@ export default function Page() {
         <PriceCard price={price} />
 
         {/* BUY Gauge */}
-        <BuyGauge
-          value={
-            prediction?.probabilities
-              ? Math.round(prediction.probabilities.bullish * 100)
-              : 0
-          }
-        />
+        <BuyGauge value={buyPercent} />
 
         {/* SELL Gauge */}
-        <SellGauge
-          value={
-            prediction?.probabilities
-              ? Math.round(prediction.probabilities.bearish * 100)
-              : 0
-          }
-        />
+        <SellGauge value={sellPercent} />
 
         {/* AI Prediction */}
         <PredictionCard prediction={prediction} />
