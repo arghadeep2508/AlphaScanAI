@@ -1,246 +1,168 @@
-"use client";
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-import Image from "next/image";
-import { useState, useEffect } from "react";
+import pandas as pd
+import numpy as np
+import joblib
+import os
 
-import StockChart from "../components/StockChart";
-import PriceCard from "../components/PriceCard";
-import BuyGauge from "../components/BuyGauge";
-import SellGauge from "../components/SellGauge";
-import PredictionCard from "../components/PredictionCard";
-import Footer from "../components/Footer";
+from backend.chart import router as chart_router
+from backend.chart import fetch_stock_data
 
-/**
- * API BASE URL
- * Uses environment variable in production.
- * Falls back to localhost for development.
- */
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
-export default function Home() {
-  const [symbol, setSymbol] = useState("AAPL");
-  const [input, setInput] = useState("AAPL");
+# -----------------------------
+# FASTAPI APP
+# -----------------------------
 
-  const [chartData, setChartData] = useState<any[]>([]);
-  const [prediction, setPrediction] = useState<any>(null);
+app = FastAPI(title="AlphaScanAI")
 
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+app.include_router(chart_router)
 
-  const [timeframe, setTimeframe] = useState("1M");
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-  async function loadStock(sym: string, tf: string = timeframe) {
-    try {
-      setLoading(true);
-      setError(null);
 
-      const normalized = sym.toUpperCase().trim();
+# -----------------------------
+# LOAD ML MODEL
+# -----------------------------
 
-      setSymbol(normalized);
-      setInput(normalized);
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-      /** -------- CHART API -------- */
-      const chartRes = await fetch(
-        `${API_BASE}/chart/${normalized}?range=${tf}`,
-        { cache: "no-store" }
-      );
+MODEL_PATH = os.path.join(BASE_DIR, "model", "stock_model.pkl")
+FEATURE_PATH = os.path.join(BASE_DIR, "model", "features.pkl")
 
-      if (!chartRes.ok) {
-        throw new Error("Chart API failed");
-      }
+model = joblib.load(MODEL_PATH)
+features = joblib.load(FEATURE_PATH)
 
-      const chart = await chartRes.json();
+features = [f.strip() for f in features]
 
-      if (!Array.isArray(chart)) {
-        throw new Error("Invalid chart response");
-      }
 
-      setChartData(chart);
+# -----------------------------
+# FEATURE ENGINEERING
+# -----------------------------
 
-      /** -------- PREDICTION API -------- */
-      const predRes = await fetch(
-        `${API_BASE}/predict/${normalized}`,
-        { cache: "no-store" }
-      );
+def compute_features(df: pd.DataFrame):
 
-      if (!predRes.ok) {
-        throw new Error("Prediction API failed");
-      }
+    df = df.copy()
 
-      const pred = await predRes.json();
+    df["return"] = df["Close"].pct_change()
 
-      if (!pred || typeof pred !== "object") {
-        throw new Error("Invalid prediction response");
-      }
+    df["sma5"] = df["Close"].rolling(5).mean()
+    df["sma10"] = df["Close"].rolling(10).mean()
+    df["sma20"] = df["Close"].rolling(20).mean()
 
-      setPrediction(pred);
-    } catch (err: any) {
-      setError(err?.message || "Something went wrong");
-      setChartData([]);
-      setPrediction(null);
-    } finally {
-      setLoading(false);
-    }
-  }
+    df["volatility"] = df["Close"].rolling(10).std()
 
-  /** Reload when timeframe changes */
-  useEffect(() => {
-    loadStock(symbol, timeframe);
-  }, [timeframe]);
+    df["ema12"] = df["Close"].ewm(span=12).mean()
+    df["ema26"] = df["Close"].ewm(span=26).mean()
 
-  /** Initial load */
-  useEffect(() => {
-    loadStock("AAPL", "1M");
-  }, []);
+    df["macd"] = df["ema12"] - df["ema26"]
 
-  function analyze() {
-    if (!input) return;
-    loadStock(input, timeframe);
-  }
+    delta = df["Close"].diff()
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = (-delta.clip(upper=0)).rolling(14).mean()
 
-  const buyPercent = prediction
-    ? Math.round((prediction.confidence || 0) * 100)
-    : 0;
+    rs = gain / (loss.replace(0, np.nan))
+    df["rsi"] = 100 - (100 / (1 + rs))
 
-  const sellPercent = 100 - buyPercent;
+    std = df["Close"].rolling(20).std()
+    df["bb_upper"] = df["sma20"] + 2 * std
+    df["bb_lower"] = df["sma20"] - 2 * std
 
-  return (
-    <div className="flex bg-slate-950 text-white min-h-screen">
-      {/* SIDEBAR */}
-      <aside className="w-72 p-6 border-r border-slate-800 flex flex-col">
-        {/* LOGO */}
-        <div className="flex flex-col items-center mb-10">
-          <Image
-            src="/logo.png"
-            alt="AlphaScanAI Logo"
-            width={120}
-            height={120}
-            className="rounded-full object-contain"
-            priority
-          />
+    df["momentum"] = df["Close"] - df["Close"].shift(10)
 
-          <h1 className="mt-3 text-xl font-bold tracking-wide">
-            AlphaScanAI
-          </h1>
-        </div>
+    df["volume_change"] = df["Volume"].pct_change()
 
-        {/* USER CARD */}
-        <div className="flex items-center gap-3 mb-8 p-3 rounded-lg bg-slate-900 border border-slate-700">
-          <Image
-            src="/logo.png"
-            alt="User Avatar"
-            width={36}
-            height={36}
-            className="rounded-full"
-          />
+    df["lag1"] = df["Close"].shift(1)
+    df["lag2"] = df["Close"].shift(2)
+    df["lag3"] = df["Close"].shift(3)
+    df["lag5"] = df["Close"].shift(5)
+    df["lag10"] = df["Close"].shift(10)
 
-          <div>
-            <p className="text-sm font-semibold text-slate-200">
-              User
-            </p>
-            <p className="text-xs text-slate-400">ID 393829</p>
-          </div>
-        </div>
+    df["trend_5"] = df["Close"].rolling(5).mean()
+    df["trend_20"] = df["Close"].rolling(20).mean()
 
-        {/* MENU */}
-        <nav className="space-y-1 text-slate-400">
-          {["Dashboard", "Portfolio", "Market", "Settings"].map(
-            (item) => (
-              <div
-                key={item}
-                className="cursor-pointer px-3 py-2 rounded-lg hover:bg-slate-800 hover:text-white transition"
-              >
-                {item}
-              </div>
-            )
-          )}
-        </nav>
+    df["trend_diff"] = df["trend_5"] - df["trend_20"]
 
-        {/* POPULAR STOCKS */}
-        <div className="mt-10">
-          <p className="text-slate-400 mb-3 text-sm">
-            Popular Stocks
-          </p>
+    df["price_position"] = (
+        (df["Close"] - df["bb_lower"]) /
+        (df["bb_upper"] - df["bb_lower"])
+    )
 
-          {["AAPL", "TSLA", "NVDA", "AMZN"].map((s) => (
-            <div
-              key={s}
-              onClick={() => loadStock(s, timeframe)}
-              className="cursor-pointer hover:text-green-400 mb-2 text-sm"
-            >
-              {s}
-            </div>
-          ))}
-        </div>
-      </aside>
+    df["return_3"] = df["Close"].pct_change(3)
+    df["return_5"] = df["Close"].pct_change(5)
 
-      {/* CONTENT COLUMN */}
-      <div className="flex flex-col flex-1">
-        {/* MAIN CONTENT */}
-        <main className="flex-1 p-8">
-          {/* SEARCH */}
-          <div className="flex items-center gap-4 mb-8">
-            <input
-              value={input}
-              onChange={(e) =>
-                setInput(e.target.value.toUpperCase())
-              }
-              className="bg-slate-900 border border-slate-700 px-5 py-2 rounded-lg w-64 focus:outline-none focus:border-green-400"
-            />
+    df["volume_ratio"] = df["Volume"] / df["Volume"].rolling(10).mean()
 
-            <button
-              onClick={analyze}
-              className="bg-green-500 hover:bg-green-400 px-5 py-2 rounded-lg text-black font-semibold transition"
-            >
-              Analyze
-            </button>
+    df = df.dropna()
 
-            {loading && (
-              <span className="text-slate-400 text-sm">
-                Loading...
-              </span>
-            )}
-          </div>
+    return df
 
-          {/* ERROR */}
-          {error && (
-            <div className="mb-6 text-red-400">{error}</div>
-          )}
 
-          {/* CARDS */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <PriceCard price={prediction?.price || 0} />
-            <BuyGauge value={buyPercent} />
-            <SellGauge value={sellPercent} />
-            <PredictionCard prediction={prediction} />
-          </div>
+# -----------------------------
+# PREDICTION API
+# -----------------------------
 
-          {/* CHART */}
-          <div className="bg-gradient-to-br from-slate-900 to-slate-800 border border-slate-700 rounded-xl p-5 shadow-lg">
-            <div className="flex justify-end gap-3 mb-4">
-              {["1D", "5D", "1M", "6M", "1Y"].map((tf) => (
-                <button
-                  key={tf}
-                  onClick={() => setTimeframe(tf)}
-                  className={`px-3 py-1 rounded text-sm transition ${
-                    timeframe === tf
-                      ? "bg-green-500 text-black"
-                      : "bg-slate-800 hover:bg-slate-700"
-                  }`}
-                >
-                  {tf}
-                </button>
-              ))}
-            </div>
+@app.get("/predict/{symbol}")
+def predict(symbol: str):
 
-            <StockChart data={chartData} />
-          </div>
-        </main>
+    try:
 
-        {/* FOOTER */}
-        <Footer />
-      </div>
-    </div>
-  );
-}
+        symbol = symbol.upper()
+
+        df = fetch_stock_data(symbol)
+
+        if df is None or df.empty:
+            return {"error": "No market data available"}
+
+        if "Date" in df.columns:
+            df = df.set_index("Date")
+
+        df = compute_features(df)
+
+        latest = df.iloc[-1].copy()
+        latest["symbol_id"] = 1
+
+        X = pd.DataFrame([latest])
+
+        for col in features:
+            if col not in X.columns:
+                X[col] = 0
+
+        X = X[features]
+
+        # MODEL PREDICTION
+        pred = model.predict(X)[0]
+
+        proba = model.predict_proba(X)[0]
+
+        bullish = float(proba[1])
+        bearish = float(proba[0])
+
+        confidence = max(bullish, bearish)
+
+        price = float(df["Close"].iloc[-1])
+
+        return {
+            "symbol": symbol,
+            "price": price,
+
+            "prediction": "UP" if pred == 1 else "DOWN",
+
+            "confidence": confidence,
+
+            "probabilities": {
+                "bullish": bullish,
+                "bearish": bearish
+            }
+
+        }
+
+    except Exception as e:
+
+        return {"error": str(e)}
