@@ -10,17 +10,14 @@ from backend.chart import router as chart_router
 from backend.chart import fetch_stock_data
 
 
-
 # -----------------------------
 # FASTAPI APP
 # -----------------------------
 
 app = FastAPI(title="AlphaScanAI")
 
-# Register routers
 app.include_router(chart_router)
 
-# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -108,6 +105,25 @@ def compute_features(df: pd.DataFrame):
 
 
 # -----------------------------
+# HELPER FUNCTION
+# -----------------------------
+
+def prob_to_expected_move(prob: float, horizon: str):
+    """
+    Convert model probability to estimated move %
+    (heuristic approximation)
+    """
+
+    if horizon == "1D":
+        return round(prob * 1.2, 2)
+
+    if horizon == "5D":
+        return round(prob * 3.0, 2)
+
+    return 0.0
+
+
+# -----------------------------
 # PREDICTION API
 # -----------------------------
 
@@ -118,13 +134,11 @@ def predict(symbol: str):
 
         symbol = symbol.upper()
 
-        # Use same reliable data source as chart endpoint
         df = fetch_stock_data(symbol)
 
         if df is None or df.empty:
             return {"error": "No market data available"}
 
-        # Ensure Date is index for feature calculations
         if "Date" in df.columns:
             df = df.set_index("Date")
 
@@ -135,7 +149,6 @@ def predict(symbol: str):
 
         X = pd.DataFrame([latest])
 
-        # Ensure all required features exist
         for col in features:
             if col not in X.columns:
                 X[col] = 0
@@ -145,13 +158,33 @@ def predict(symbol: str):
         pred = model.predict(X)[0]
         proba = model.predict_proba(X)[0].max()
 
+        direction = "UP" if pred == 1 else "DOWN"
+
         price = float(df["Close"].iloc[-1])
+
+        # 1 Day Forecast
+        forecast_1d = {
+            "horizon": "1D",
+            "direction": direction,
+            "confidence": round(float(proba), 2),
+            "expected_move_pct": prob_to_expected_move(proba, "1D")
+        }
+
+        # 5 Day Forecast
+        forecast_5d = {
+            "horizon": "5D",
+            "direction": direction,
+            "confidence": round(float(proba * 0.9), 2),
+            "expected_move_pct": prob_to_expected_move(proba, "5D")
+        }
 
         return {
             "symbol": symbol,
             "price": price,
-            "prediction": "UP" if pred == 1 else "DOWN",
-            "confidence": float(proba)
+            "forecasts": [
+                forecast_1d,
+                forecast_5d
+            ]
         }
 
     except Exception as e:
