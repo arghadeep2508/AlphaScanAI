@@ -1,168 +1,90 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+"use client";
 
-import pandas as pd
-import numpy as np
-import joblib
-import os
+import { useState } from "react";
 
-from backend.chart import router as chart_router
-from backend.chart import fetch_stock_data
+import PriceCard from "../components/PriceCard";
+import BuyGauge from "../components/BuyGauge";
+import SellGauge from "../components/SellGauge";
+import PredictionCard from "../components/PredictionCard";
+import StockChart from "../components/StockChart";
+import StockSearch from "../components/StockSearch";
+import Timeframe from "../components/Timeframe";
 
+const API_URL = "https://alphascanai-backend.onrender.com";
 
-# -----------------------------
-# FASTAPI APP
-# -----------------------------
+export default function Page() {
 
-app = FastAPI(title="AlphaScanAI")
+  const [symbol, setSymbol] = useState("AAPL");
+  const [prediction, setPrediction] = useState<any>(null);
+  const [price, setPrice] = useState<number | null>(null);
 
-app.include_router(chart_router)
+  const handleAnalyze = async (ticker: string) => {
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    try {
 
+      const res = await fetch(`${API_URL}/predict/${ticker}`);
+      const data = await res.json();
 
-# -----------------------------
-# LOAD ML MODEL
-# -----------------------------
+      if (data.error) {
+        console.error(data.error);
+        return;
+      }
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+      setPrediction(data);
+      setPrice(data.price);
+      setSymbol(ticker);
 
-MODEL_PATH = os.path.join(BASE_DIR, "model", "stock_model.pkl")
-FEATURE_PATH = os.path.join(BASE_DIR, "model", "features.pkl")
+    } catch (err) {
+      console.error("API error", err);
+    }
+  };
 
-model = joblib.load(MODEL_PATH)
-features = joblib.load(FEATURE_PATH)
+  return (
 
-features = [f.strip() for f in features]
+    <div className="p-6">
 
+      {/* Search */}
+      <StockSearch onAnalyze={handleAnalyze} />
 
-# -----------------------------
-# FEATURE ENGINEERING
-# -----------------------------
+      {/* Dashboard Cards */}
+      <div className="grid grid-cols-4 gap-4 mt-6">
 
-def compute_features(df: pd.DataFrame):
+        {/* Current Price */}
+        <PriceCard price={price} />
 
-    df = df.copy()
+        {/* BUY Gauge */}
+        <BuyGauge
+          value={
+            prediction?.probabilities
+              ? Math.round(prediction.probabilities.bullish * 100)
+              : 0
+          }
+        />
 
-    df["return"] = df["Close"].pct_change()
+        {/* SELL Gauge */}
+        <SellGauge
+          value={
+            prediction?.probabilities
+              ? Math.round(prediction.probabilities.bearish * 100)
+              : 0
+          }
+        />
 
-    df["sma5"] = df["Close"].rolling(5).mean()
-    df["sma10"] = df["Close"].rolling(10).mean()
-    df["sma20"] = df["Close"].rolling(20).mean()
+        {/* AI Prediction */}
+        <PredictionCard prediction={prediction} />
 
-    df["volatility"] = df["Close"].rolling(10).std()
+      </div>
 
-    df["ema12"] = df["Close"].ewm(span=12).mean()
-    df["ema26"] = df["Close"].ewm(span=26).mean()
+      {/* Chart */}
+      <div className="mt-8">
 
-    df["macd"] = df["ema12"] - df["ema26"]
+        <Timeframe />
 
-    delta = df["Close"].diff()
-    gain = delta.clip(lower=0).rolling(14).mean()
-    loss = (-delta.clip(upper=0)).rolling(14).mean()
+        <StockChart symbol={symbol} />
 
-    rs = gain / (loss.replace(0, np.nan))
-    df["rsi"] = 100 - (100 / (1 + rs))
+      </div>
 
-    std = df["Close"].rolling(20).std()
-    df["bb_upper"] = df["sma20"] + 2 * std
-    df["bb_lower"] = df["sma20"] - 2 * std
+    </div>
 
-    df["momentum"] = df["Close"] - df["Close"].shift(10)
-
-    df["volume_change"] = df["Volume"].pct_change()
-
-    df["lag1"] = df["Close"].shift(1)
-    df["lag2"] = df["Close"].shift(2)
-    df["lag3"] = df["Close"].shift(3)
-    df["lag5"] = df["Close"].shift(5)
-    df["lag10"] = df["Close"].shift(10)
-
-    df["trend_5"] = df["Close"].rolling(5).mean()
-    df["trend_20"] = df["Close"].rolling(20).mean()
-
-    df["trend_diff"] = df["trend_5"] - df["trend_20"]
-
-    df["price_position"] = (
-        (df["Close"] - df["bb_lower"]) /
-        (df["bb_upper"] - df["bb_lower"])
-    )
-
-    df["return_3"] = df["Close"].pct_change(3)
-    df["return_5"] = df["Close"].pct_change(5)
-
-    df["volume_ratio"] = df["Volume"] / df["Volume"].rolling(10).mean()
-
-    df = df.dropna()
-
-    return df
-
-
-# -----------------------------
-# PREDICTION API
-# -----------------------------
-
-@app.get("/predict/{symbol}")
-def predict(symbol: str):
-
-    try:
-
-        symbol = symbol.upper()
-
-        df = fetch_stock_data(symbol)
-
-        if df is None or df.empty:
-            return {"error": "No market data available"}
-
-        if "Date" in df.columns:
-            df = df.set_index("Date")
-
-        df = compute_features(df)
-
-        latest = df.iloc[-1].copy()
-        latest["symbol_id"] = 1
-
-        X = pd.DataFrame([latest])
-
-        for col in features:
-            if col not in X.columns:
-                X[col] = 0
-
-        X = X[features]
-
-        # MODEL PREDICTION
-        pred = model.predict(X)[0]
-
-        proba = model.predict_proba(X)[0]
-
-        bullish = float(proba[1])
-        bearish = float(proba[0])
-
-        confidence = max(bullish, bearish)
-
-        price = float(df["Close"].iloc[-1])
-
-        return {
-            "symbol": symbol,
-            "price": price,
-
-            "prediction": "UP" if pred == 1 else "DOWN",
-
-            "confidence": confidence,
-
-            "probabilities": {
-                "bullish": bullish,
-                "bearish": bearish
-            }
-
-        }
-
-    except Exception as e:
-
-        return {"error": str(e)}
+  );
+}
