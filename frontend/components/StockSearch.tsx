@@ -2,16 +2,19 @@
 
 import { useState } from "react";
 
-export default function StockSearch({ onSearch }: any) {
+export default function StockSearch({ onAnalyze }: any) {
+
   const [symbol, setSymbol] = useState("AAPL");
 
   const submit = () => {
     if (!symbol) return;
-    onSearch(symbol.toUpperCase());
+    onAnalyze(symbol.toUpperCase());
   };
 
   return (
+
     <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
+
       <input
         value={symbol}
         onChange={(e) => setSymbol(e.target.value)}
@@ -24,6 +27,7 @@ export default function StockSearch({ onSearch }: any) {
           color: "white"
         }}
       />
+
       <button
         onClick={submit}
         style={{
@@ -36,6 +40,8 @@ export default function StockSearch({ onSearch }: any) {
       >
         Analyze
       </button>
+
     </div>
+
   );
 }
