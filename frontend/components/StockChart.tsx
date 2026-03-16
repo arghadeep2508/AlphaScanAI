@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createChart,
   CandlestickSeries,
@@ -8,11 +8,38 @@ import {
   LineSeries
 } from "lightweight-charts";
 
-export default function StockChart({ data }: any) {
+const API_URL = "https://alphascanai-backend.onrender.com";
+
+export default function StockChart({ symbol }: { symbol: string }) {
 
   const mainChartRef = useRef<HTMLDivElement>(null);
   const macdChartRef = useRef<HTMLDivElement>(null);
   const rsiChartRef = useRef<HTMLDivElement>(null);
+
+  const [data, setData] = useState<any[]>([]);
+
+  /* -------- FETCH DATA FROM BACKEND -------- */
+
+  useEffect(() => {
+
+    async function load() {
+      try {
+
+        const res = await fetch(`${API_URL}/chart/${symbol}`);
+        const json = await res.json();
+
+        setData(json);
+
+      } catch (err) {
+        console.error("Chart API error", err);
+      }
+    }
+
+    load();
+
+  }, [symbol]);
+
+  /* -------- RENDER CHART -------- */
 
   useEffect(() => {
 
@@ -30,7 +57,7 @@ export default function StockChart({ data }: any) {
 
     const closes = formatted.map((d: any) => d.close);
 
-    /* ---------------- MAIN PRICE CHART ---------------- */
+    /* -------- MAIN CHART -------- */
 
     const chart = createChart(mainChartRef.current, {
       width: mainChartRef.current.clientWidth,
@@ -42,16 +69,10 @@ export default function StockChart({ data }: any) {
       grid: {
         vertLines: { color: "#1e293b" },
         horzLines: { color: "#1e293b" }
-      },
-      rightPriceScale: {
-        borderColor: "#334155"
-      },
-      timeScale: {
-        borderColor: "#334155"
       }
     });
 
-    const candleSeries = chart.addSeries(CandlestickSeries, {
+    const candles = chart.addSeries(CandlestickSeries, {
       upColor: "#22c55e",
       downColor: "#ef4444",
       borderUpColor: "#22c55e",
@@ -60,9 +81,9 @@ export default function StockChart({ data }: any) {
       wickDownColor: "#ef4444"
     });
 
-    candleSeries.setData(formatted);
+    candles.setData(formatted);
 
-    /* ---------------- VOLUME (SEPARATE SCALE) ---------------- */
+    /* -------- VOLUME -------- */
 
     const volumeSeries = chart.addSeries(HistogramSeries, {
       priceFormat: { type: "volume" },
@@ -70,10 +91,7 @@ export default function StockChart({ data }: any) {
     });
 
     chart.priceScale("volume").applyOptions({
-      scaleMargins: {
-        top: 0.75,
-        bottom: 0
-      }
+      scaleMargins: { top: 0.75, bottom: 0 }
     });
 
     volumeSeries.setData(
@@ -84,7 +102,7 @@ export default function StockChart({ data }: any) {
       }))
     );
 
-    /* ---------------- SMA ---------------- */
+    /* -------- SMA -------- */
 
     function SMA(period: number) {
 
@@ -108,23 +126,15 @@ export default function StockChart({ data }: any) {
       return result;
     }
 
-    const sma20 = chart.addSeries(LineSeries, {
-      color: "#3b82f6",
-      lineWidth: 2
-    });
-
+    const sma20 = chart.addSeries(LineSeries, { color: "#3b82f6", lineWidth: 2 });
     sma20.setData(SMA(20));
 
-    const sma50 = chart.addSeries(LineSeries, {
-      color: "#f59e0b",
-      lineWidth: 2
-    });
-
+    const sma50 = chart.addSeries(LineSeries, { color: "#f59e0b", lineWidth: 2 });
     sma50.setData(SMA(50));
 
     chart.timeScale().fitContent();
 
-    /* ---------------- MACD ---------------- */
+    /* -------- MACD -------- */
 
     function EMA(period: number, values: number[]) {
 
@@ -149,32 +159,19 @@ export default function StockChart({ data }: any) {
     const macdChart = createChart(macdChartRef.current, {
       width: macdChartRef.current.clientWidth,
       height: 180,
-      layout: {
-        background: { color: "#020617" },
-        textColor: "#cbd5f5"
-      },
-      grid: {
-        vertLines: { color: "#1e293b" },
-        horzLines: { color: "#1e293b" }
-      }
+      layout: { background: { color: "#020617" }, textColor: "#cbd5f5" }
     });
 
     const macdLine = macdChart.addSeries(LineSeries, { color: "#22c55e" });
 
     macdLine.setData(
-      macd.map((v, i) => ({
-        time: formatted[i].time,
-        value: v
-      }))
+      macd.map((v, i) => ({ time: formatted[i].time, value: v }))
     );
 
     const signalLine = macdChart.addSeries(LineSeries, { color: "#ef4444" });
 
     signalLine.setData(
-      signal.map((v, i) => ({
-        time: formatted[i].time,
-        value: v
-      }))
+      signal.map((v, i) => ({ time: formatted[i].time, value: v }))
     );
 
     const hist = macdChart.addSeries(HistogramSeries);
@@ -189,7 +186,7 @@ export default function StockChart({ data }: any) {
 
     macdChart.timeScale().fitContent();
 
-    /* ---------------- RSI ---------------- */
+    /* -------- RSI -------- */
 
     function RSI(period: number) {
 
@@ -225,14 +222,7 @@ export default function StockChart({ data }: any) {
     const rsiChart = createChart(rsiChartRef.current, {
       width: rsiChartRef.current.clientWidth,
       height: 160,
-      layout: {
-        background: { color: "#020617" },
-        textColor: "#cbd5f5"
-      },
-      grid: {
-        vertLines: { color: "#1e293b" },
-        horzLines: { color: "#1e293b" }
-      }
+      layout: { background: { color: "#020617" }, textColor: "#cbd5f5" }
     });
 
     const rsiSeries = rsiChart.addSeries(LineSeries, {
@@ -243,8 +233,6 @@ export default function StockChart({ data }: any) {
     rsiSeries.setData(RSI(14));
 
     rsiChart.timeScale().fitContent();
-
-    /* ---------------- CLEANUP ---------------- */
 
     return () => {
       chart.remove();
@@ -261,4 +249,5 @@ export default function StockChart({ data }: any) {
       <div ref={rsiChartRef} style={{ width: "100%", height: "160px", marginTop: "10px" }} />
     </>
   );
+
 }
