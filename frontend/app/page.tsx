@@ -48,11 +48,14 @@ export default function Page() {
       setSymbol(ticker);
 
     } catch (err) {
-      console.error("API request failed:", err);
-    } finally {
-      setLoading(false);
-    }
 
+      console.error("API request failed:", err);
+
+    } finally {
+
+      setLoading(false);
+
+    }
   };
 
   const buyPercent =
@@ -75,12 +78,16 @@ export default function Page() {
       {/* Dashboard Cards */}
       <div className="grid grid-cols-4 gap-4 mt-6">
 
-        <PriceCard price={price} />
+        {/* Current Price */}
+        <PriceCard price={price ?? 0} />
 
+        {/* BUY Gauge */}
         <BuyGauge value={buyPercent} />
 
+        {/* SELL Gauge */}
         <SellGauge value={sellPercent} />
 
+        {/* AI Prediction */}
         <PredictionCard prediction={prediction} />
 
       </div>
