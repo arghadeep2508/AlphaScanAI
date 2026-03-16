@@ -110,7 +110,7 @@ def compute_features(df: pd.DataFrame):
 
 def prob_to_expected_move(prob: float, horizon: str):
     """
-    Convert model probability to estimated move %
+    Convert probability to estimated move %
     (heuristic approximation)
     """
 
@@ -155,28 +155,43 @@ def predict(symbol: str):
 
         X = X[features]
 
-        pred = model.predict(X)[0]
-        proba = model.predict_proba(X)[0].max()
+        # -----------------------------
+        # MODEL PREDICTION
+        # -----------------------------
 
-        direction = "UP" if pred == 1 else "DOWN"
+        pred = model.predict(X)[0]
+        probas = model.predict_proba(X)[0]
+
+        bearish_prob = float(probas[0])
+        bullish_prob = float(probas[1])
+
+        confidence = max(bullish_prob, bearish_prob)
+
+        direction = "UP" if bullish_prob > bearish_prob else "DOWN"
 
         price = float(df["Close"].iloc[-1])
 
-        # 1 Day Forecast
+        # -----------------------------
+        # FORECASTS
+        # -----------------------------
+
         forecast_1d = {
             "horizon": "1D",
             "direction": direction,
-            "confidence": round(float(proba), 2),
-            "expected_move_pct": prob_to_expected_move(proba, "1D")
+            "confidence": round(confidence, 2),
+            "expected_move_pct": prob_to_expected_move(confidence, "1D")
         }
 
-        # 5 Day Forecast
         forecast_5d = {
             "horizon": "5D",
             "direction": direction,
-            "confidence": round(float(proba * 0.9), 2),
-            "expected_move_pct": prob_to_expected_move(proba, "5D")
+            "confidence": round(confidence * 0.9, 2),
+            "expected_move_pct": prob_to_expected_move(confidence, "5D")
         }
+
+        # -----------------------------
+        # RESPONSE
+        # -----------------------------
 
         return {
             "symbol": symbol,
@@ -184,7 +199,11 @@ def predict(symbol: str):
             "forecasts": [
                 forecast_1d,
                 forecast_5d
-            ]
+            ],
+            "probabilities": {
+                "bullish": round(bullish_prob, 4),
+                "bearish": round(bearish_prob, 4)
+            }
         }
 
     except Exception as e:
