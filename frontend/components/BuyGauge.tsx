@@ -3,15 +3,13 @@
 import { CircularProgressbar, buildStyles } from "react-circular-progressbar";
 import "react-circular-progressbar/dist/styles.css";
 
-export default function BuyGauge({ prediction }: any) {
+type Props = {
+  value: number;
+};
 
-  if (!prediction || !prediction.probabilities) return null;
-
-  // Convert model probability → percentage
-  const value = Math.round(prediction.probabilities.bullish * 100);
+export default function BuyGauge({ value }: Props) {
 
   return (
-
     <div className="bg-gradient-to-br from-slate-900 to-slate-800 
     border border-slate-700 
     rounded-xl 
@@ -43,7 +41,5 @@ export default function BuyGauge({ prediction }: any) {
       </div>
 
     </div>
-
   );
-
 }
