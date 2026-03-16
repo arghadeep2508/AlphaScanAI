@@ -4,16 +4,18 @@ export default function PredictionCard({ prediction }: any) {
 
   if (!prediction || !prediction.forecasts) return null;
 
-  // 1 Day forecast used as main signal
+  // Use 1 Day forecast as main signal
   const forecast1D = prediction.forecasts[0];
 
-  const isUp = forecast1D.direction === "UP";
+  const direction = forecast1D.direction;
+  const isUp = direction === "UP";
 
   const signalText = isUp ? "BUY" : "SELL";
 
   const confidence = forecast1D.confidence * 100;
-
   const expectedMove = forecast1D.expected_move_pct;
+
+  const arrow = isUp ? "↑" : "↓";
 
   return (
 
@@ -42,10 +44,11 @@ export default function PredictionCard({ prediction }: any) {
         {signalText}
       </div>
 
-      {/* Confidence + Move */}
+      {/* Confidence + Expected Move */}
 
       <div className="flex justify-between">
 
+        {/* Confidence */}
         <div>
           <div className="text-slate-400 text-sm">
             Confidence
@@ -56,13 +59,18 @@ export default function PredictionCard({ prediction }: any) {
           </div>
         </div>
 
+        {/* Expected Move */}
         <div>
           <div className="text-slate-400 text-sm">
             Expected Move
           </div>
 
-          <div className="text-xl font-semibold">
-            {expectedMove.toFixed(2)}%
+          <div
+            className={`text-xl font-semibold ${
+              isUp ? "text-green-400" : "text-red-400"
+            }`}
+          >
+            {arrow} {expectedMove.toFixed(2)}%
           </div>
         </div>
 
