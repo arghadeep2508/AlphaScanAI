@@ -14,8 +14,12 @@ const API_URL = "https://alphascanai-backend.onrender.com";
 
 type PredictionType = {
   price: number;
-  prediction: "UP" | "DOWN";
-  confidence: number;
+  forecasts: {
+    horizon: string;
+    direction: "UP" | "DOWN";
+    confidence: number;
+    expected_move_pct: number;
+  }[];
   probabilities: {
     bullish: number;
     bearish: number;
